@@ -6,7 +6,7 @@ A Flutter plugin for scanning BLE (Bluetooth Low Energy) beacons on Android and 
 
 **Cross-platform support**
 - Android (API 21+)
-- iOS (13.0+)
+- iOS (13.0+) WIP
 
 **Beacon detection**
 - iBeacon (Apple)

@@ -1,6 +1,6 @@
 name: beacons_flutter
 description: A Flutter plugin for scanning BLE (Bluetooth Low Energy) beacons on Android and iOS. Supports iBeacon, Eddystone, and AltBeacon protocols.
-version: 1.0.0
+version: 0.0.1
 homepage: https://github.com/gerardggfmahadc/beacons_flutter
 repository: https://github.com/gerardggfmahadc/beacons_flutter
 issue_tracker: https://github.com/gerardggfmahadc/beacons_flutter/issues
