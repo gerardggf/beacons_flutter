@@ -6,15 +6,30 @@ void main() {
   runApp(const BeaconsFlutterExampleApp());
 }
 
-class BeaconsFlutterExampleApp extends StatefulWidget {
+class BeaconsFlutterExampleApp extends StatelessWidget {
   const BeaconsFlutterExampleApp({super.key});
 
   @override
-  State<BeaconsFlutterExampleApp> createState() =>
-      _BeaconsFlutterExampleAppState();
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+        useMaterial3: true,
+      ),
+      home: const BeaconScannerPage(),
+    );
+  }
 }
 
-class _BeaconsFlutterExampleAppState extends State<BeaconsFlutterExampleApp> {
+class BeaconScannerPage extends StatefulWidget {
+  const BeaconScannerPage({super.key});
+
+  @override
+  State<BeaconScannerPage> createState() => _BeaconScannerPageState();
+}
+
+class _BeaconScannerPageState extends State<BeaconScannerPage> {
   final BeaconsFlutter _beaconsPlugin = BeaconsFlutter();
   final List<Map<String, dynamic>> _discoveredBeacons = [];
   bool _isScanning = false;
@@ -24,21 +39,46 @@ class _BeaconsFlutterExampleAppState extends State<BeaconsFlutterExampleApp> {
   @override
   void initState() {
     super.initState();
-    _checkPermissions();
     _listenToScanResults();
+    _requestPermissions();
   }
 
-  Future<void> _checkPermissions() async {
+  Future<void> _requestPermissions() async {
+    // First check if permissions are already granted
     final hasPermissions = await _beaconsPlugin.checkPermissions();
+
+    if (hasPermissions) {
+      setState(() {
+        _hasPermissions = true;
+      });
+      return;
+    }
+
+    // Request permissions
+    final granted = await _beaconsPlugin.requestPermissions();
     setState(() {
-      _hasPermissions = hasPermissions;
+      _hasPermissions = granted;
     });
+
+    if (!granted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Permissions are required to scan for beacons'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    }
   }
 
   void _listenToScanResults() {
     _scanSubscription = _beaconsPlugin.scanResults.listen((device) {
+      debugPrint('Device found: ${device['name']} - ${device['id']}');
+
       // Identify beacon type
       final beaconInfo = _identifyBeaconType(device);
+      debugPrint('  Type: ${beaconInfo['type']} - ${beaconInfo['info']}');
 
       // Only add if it's a valid beacon
       if (beaconInfo['type'] != 'unknown') {
@@ -55,8 +95,12 @@ class _BeaconsFlutterExampleAppState extends State<BeaconsFlutterExampleApp> {
 
           if (index != -1) {
             _discoveredBeacons[index] = enrichedDevice;
+            debugPrint('  Updated existing beacon');
           } else {
             _discoveredBeacons.add(enrichedDevice);
+            debugPrint(
+              '  Added new beacon (total: ${_discoveredBeacons.length})',
+            );
           }
 
           // Sort by RSSI (strongest signal first)
@@ -66,6 +110,8 @@ class _BeaconsFlutterExampleAppState extends State<BeaconsFlutterExampleApp> {
             return rssiB.compareTo(rssiA);
           });
         });
+      } else {
+        debugPrint('  Skipped: not a beacon');
       }
     });
   }
@@ -135,24 +181,37 @@ class _BeaconsFlutterExampleAppState extends State<BeaconsFlutterExampleApp> {
   }
 
   Future<void> _toggleScan() async {
+    debugPrint('=== Toggle Scan ===');
+    debugPrint(
+      'Current state: isScanning=$_isScanning, hasPermissions=$_hasPermissions',
+    );
+
     // Prevent multiple clicks while processing
     if (_isScanning) {
+      debugPrint('Stopping scan...');
       setState(() {
         _isScanning = false;
       });
       await _beaconsPlugin.stopScan();
+      debugPrint('Scan stopped');
     } else {
+      debugPrint('Starting scan...');
       setState(() {
         _isScanning = true;
         _discoveredBeacons.clear();
       });
 
       final success = await _beaconsPlugin.startScan();
+      debugPrint('Start scan result: $success');
+
       if (!success && mounted) {
+        debugPrint('Scan failed, reverting state');
         // If failed, revert state
         setState(() {
           _isScanning = false;
         });
+      } else {
+        debugPrint('Scan started successfully!');
       }
     }
   }
@@ -540,314 +599,323 @@ class _BeaconsFlutterExampleAppState extends State<BeaconsFlutterExampleApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-        useMaterial3: true,
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Beacon Scanner'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      home: Scaffold(
-        appBar: AppBar(
-          title: const Text('Beacon Scanner'),
-          backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        ),
-        body: Column(
-          children: [
-            // Control panel
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  _isScanning
-                                      ? Icons.bluetooth_searching
-                                      : Icons.bluetooth,
-                                  color: _isScanning
-                                      ? Colors.blue
-                                      : Colors.grey,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  _isScanning ? 'Scanning...' : 'Stopped',
-                                  style: const TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Beacons found: ${_discoveredBeacons.length}',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey.shade700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      ElevatedButton.icon(
-                        onPressed: _hasPermissions ? _toggleScan : null,
-                        icon: Icon(_isScanning ? Icons.stop : Icons.play_arrow),
-                        label: Text(_isScanning ? 'Stop' : 'Start'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _isScanning
-                              ? Colors.red.shade600
-                              : Colors.green.shade600,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 12,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (!_hasPermissions)
-                    Container(
-                      margin: const EdgeInsets.only(top: 12),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.shade100,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.orange.shade300),
-                      ),
-                      child: Row(
+      body: Column(
+        children: [
+          // Control panel
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(
-                            Icons.warning_amber_rounded,
-                            color: Colors.orange.shade800,
+                          Row(
+                            children: [
+                              Icon(
+                                _isScanning
+                                    ? Icons.bluetooth_searching
+                                    : Icons.bluetooth,
+                                color: _isScanning ? Colors.blue : Colors.grey,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                _isScanning ? 'Scanning...' : 'Stopped',
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 12),
-                          const Expanded(
-                            child: Text(
-                              'Location and Bluetooth permissions required',
-                              style: TextStyle(fontSize: 13),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Beacons found: ${_discoveredBeacons.length}',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey.shade700,
                             ),
                           ),
                         ],
                       ),
                     ),
-                ],
-              ),
-            ),
-
-            // Beacon list
-            Expanded(
-              child: _discoveredBeacons.isEmpty
-                  ? RefreshIndicator(
-                      onRefresh: _refreshScan,
-                      child: SingleChildScrollView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        child: Container(
-                          height: MediaQuery.of(context).size.height - 200,
-                          alignment: Alignment.center,
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.bluetooth_searching,
-                                size: 80,
-                                color: Colors.grey.shade300,
-                              ),
-                              const SizedBox(height: 20),
-                              Text(
-                                _isScanning
-                                    ? 'Searching for beacons...'
-                                    : 'Press "Start" to begin',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.grey.shade600,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Pull down to refresh',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey.shade500,
-                                  fontStyle: FontStyle.italic,
-                                ),
-                              ),
-                              if (_isScanning) ...[
-                                const SizedBox(height: 20),
-                                const CircularProgressIndicator(),
-                              ],
-                            ],
-                          ),
+                    ElevatedButton.icon(
+                      onPressed: _toggleScan,
+                      icon: Icon(_isScanning ? Icons.stop : Icons.play_arrow),
+                      label: Text(_isScanning ? 'Stop' : 'Start'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _isScanning
+                            ? Colors.red.shade600
+                            : Colors.green.shade600,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
                         ),
                       ),
-                    )
-                  : RefreshIndicator(
-                      onRefresh: _refreshScan,
-                      child: ListView.builder(
-                        padding: const EdgeInsets.all(8),
-                        itemCount: _discoveredBeacons.length,
-                        itemBuilder: (context, index) {
-                          final beacon = _discoveredBeacons[index];
-                          final name = beacon['name']?.toString() ?? 'No name';
-                          final id =
-                              beacon['id']?.toString() ??
-                              beacon['address']?.toString() ??
-                              'N/A';
-                          final rssi = beacon['rssi'] as int? ?? -100;
-                          final beaconType =
-                              beacon['beaconType']?.toString() ?? 'unknown';
-                          final beaconInfo =
-                              beacon['beaconInfo']?.toString() ?? '';
-
-                          // Define icon and color based on type
-                          IconData beaconIcon;
-                          Color beaconColor;
-
-                          switch (beaconType) {
-                            case 'ibeacon':
-                              beaconIcon = Icons.apple;
-                              beaconColor = Colors.blue;
-                              break;
-                            case 'eddystone-uid':
-                            case 'eddystone-url':
-                            case 'eddystone-tlm':
-                            case 'eddystone-eid':
-                            case 'eddystone':
-                              beaconIcon = Icons.sensors;
-                              beaconColor = Colors.purple;
-                              break;
-                            case 'altbeacon':
-                              beaconIcon = Icons.circle_notifications;
-                              beaconColor = Colors.orange;
-                              break;
-                            default:
-                              beaconIcon = Icons.bluetooth;
-                              beaconColor = Colors.grey;
-                          }
-
-                          return Card(
-                            margin: const EdgeInsets.symmetric(
-                              vertical: 6,
-                              horizontal: 8,
+                    ),
+                  ],
+                ),
+                if (!_hasPermissions)
+                  Container(
+                    margin: const EdgeInsets.only(top: 12),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange.shade300),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.warning_amber_rounded,
+                              color: Colors.orange.shade800,
                             ),
-                            elevation: 3,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              side: BorderSide(
-                                color: beaconColor.withAlpha(77),
-                                width: 2,
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Text(
+                                'Location and Bluetooth permissions required',
+                                style: TextStyle(fontSize: 13),
                               ),
                             ),
-                            child: ExpansionTile(
-                              tilePadding: const EdgeInsets.all(12),
-                              childrenPadding: const EdgeInsets.all(12),
-                              leading: Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: beaconColor.withAlpha(77),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Icon(
-                                  beaconIcon,
-                                  color: beaconColor,
-                                  size: 28,
-                                ),
-                              ),
-                              title: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      name.isEmpty ? 'Beacon' : name,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16,
-                                      ),
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: beaconColor.withAlpha(51),
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(
-                                        color: beaconColor.withAlpha(125),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      beaconInfo,
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        color: beaconColor.withAlpha(255),
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    'MAC: ${id.toUpperCase()}',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.grey.shade700,
-                                      fontFamily: 'monospace',
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.signal_cellular_alt,
-                                        size: 14,
-                                        color: _getSignalColor(rssi),
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        'RSSI: $rssi dBm',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey.shade700,
-                                        ),
-                                      ),
-                                      const Spacer(),
-                                      Text(
-                                        _getSignalStrength(rssi),
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: _getSignalColor(rssi),
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                              children: [_buildBeaconDetails(beacon)],
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _requestPermissions,
+                            icon: const Icon(Icons.settings, size: 18),
+                            label: const Text('Request Permissions'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.orange.shade700,
+                              foregroundColor: Colors.white,
                             ),
-                          );
-                        },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+
+          // Beacon list
+          Expanded(
+            child: _discoveredBeacons.isEmpty
+                ? RefreshIndicator(
+                    onRefresh: _refreshScan,
+                    child: SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: Container(
+                        height: MediaQuery.of(context).size.height - 200,
+                        alignment: Alignment.center,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.bluetooth_searching,
+                              size: 80,
+                              color: Colors.grey.shade300,
+                            ),
+                            const SizedBox(height: 20),
+                            Text(
+                              _isScanning
+                                  ? 'Searching for beacons...'
+                                  : 'Press "Start" to begin',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Pull down to refresh',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade500,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                            if (_isScanning) ...[
+                              const SizedBox(height: 20),
+                              const CircularProgressIndicator(),
+                            ],
+                          ],
+                        ),
                       ),
                     ),
-            ),
-          ],
-        ),
+                  )
+                : RefreshIndicator(
+                    onRefresh: _refreshScan,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.all(8),
+                      itemCount: _discoveredBeacons.length,
+                      itemBuilder: (context, index) {
+                        final beacon = _discoveredBeacons[index];
+                        final name = beacon['name']?.toString() ?? 'No name';
+                        final id =
+                            beacon['id']?.toString() ??
+                            beacon['address']?.toString() ??
+                            'N/A';
+                        final rssi = beacon['rssi'] as int? ?? -100;
+                        final beaconType =
+                            beacon['beaconType']?.toString() ?? 'unknown';
+                        final beaconInfo =
+                            beacon['beaconInfo']?.toString() ?? '';
+
+                        // Define icon and color based on type
+                        IconData beaconIcon;
+                        Color beaconColor;
+
+                        switch (beaconType) {
+                          case 'ibeacon':
+                            beaconIcon = Icons.apple;
+                            beaconColor = Colors.blue;
+                            break;
+                          case 'eddystone-uid':
+                          case 'eddystone-url':
+                          case 'eddystone-tlm':
+                          case 'eddystone-eid':
+                          case 'eddystone':
+                            beaconIcon = Icons.sensors;
+                            beaconColor = Colors.purple;
+                            break;
+                          case 'altbeacon':
+                            beaconIcon = Icons.circle_notifications;
+                            beaconColor = Colors.orange;
+                            break;
+                          default:
+                            beaconIcon = Icons.bluetooth;
+                            beaconColor = Colors.grey;
+                        }
+
+                        return Card(
+                          margin: const EdgeInsets.symmetric(
+                            vertical: 6,
+                            horizontal: 8,
+                          ),
+                          elevation: 3,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: BorderSide(
+                              color: beaconColor.withAlpha(77),
+                              width: 2,
+                            ),
+                          ),
+                          child: ExpansionTile(
+                            tilePadding: const EdgeInsets.all(12),
+                            childrenPadding: const EdgeInsets.all(12),
+                            leading: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: beaconColor.withAlpha(77),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(
+                                beaconIcon,
+                                color: beaconColor,
+                                size: 28,
+                              ),
+                            ),
+                            title: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    name.isEmpty ? 'Beacon' : name,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: beaconColor.withAlpha(51),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: beaconColor.withAlpha(125),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    beaconInfo,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: beaconColor.withAlpha(255),
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const SizedBox(height: 6),
+                                Text(
+                                  'MAC: ${id.toUpperCase()}',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade700,
+                                    fontFamily: 'monospace',
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.signal_cellular_alt,
+                                      size: 14,
+                                      color: _getSignalColor(rssi),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'RSSI: $rssi dBm',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey.shade700,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Text(
+                                      _getSignalStrength(rssi),
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: _getSignalColor(rssi),
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            children: [_buildBeaconDetails(beacon)],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+          ),
+        ],
       ),
     );
   }

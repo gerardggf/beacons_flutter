@@ -44,6 +44,11 @@ abstract class BeaconsFlutterPlatform extends PlatformInterface {
     throw UnimplementedError('checkPermissions() has not been implemented.');
   }
 
+  /// Request required permissions
+  Future<bool> requestPermissions() {
+    throw UnimplementedError('requestPermissions() has not been implemented.');
+  }
+
   /// Get platform version (legacy method)
   Future<String?> getPlatformVersion() {
     throw UnimplementedError('platformVersion() has not been implemented.');

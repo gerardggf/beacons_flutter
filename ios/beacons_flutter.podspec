@@ -15,7 +15,7 @@ A new Flutter plugin project.
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
   s.dependency 'Flutter'
-  s.platform = :ios, '13.0'
+  s.platform = :ios, '13.1'
   
   # Frameworks requeridos para Bluetooth y Location
   s.frameworks = 'CoreBluetooth', 'CoreLocation'

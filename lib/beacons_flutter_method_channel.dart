@@ -31,16 +31,16 @@ class MethodChannelBeaconsFlutter extends BeaconsFlutterPlatform {
         _scanResultController.add(Map<String, dynamic>.from(args));
         break;
       case 'onScanError':
-        debugPrint("Error de escaneo: ${call.arguments}");
+        debugPrint("Scan error: ${call.arguments}");
         break;
       case 'onScanStarted':
-        debugPrint("Escaneo iniciado nativamente");
+        debugPrint("Scan started natively");
         break;
       case 'onScanStopped':
-        debugPrint("Escaneo detenido nativamente");
+        debugPrint("Scan stopped natively");
         break;
       default:
-        debugPrint('Método desconocido desde nativo: ${call.method}');
+        debugPrint('Unknown method from native: ${call.method}');
     }
   }
 
@@ -50,7 +50,7 @@ class MethodChannelBeaconsFlutter extends BeaconsFlutterPlatform {
       final bool? result = await methodChannel.invokeMethod<bool>('startScan');
       return result ?? false;
     } on PlatformException catch (e) {
-      debugPrint("Error al iniciar scan: ${e.message}");
+      debugPrint("Error starting scan: ${e.message}");
       return false;
     }
   }
@@ -61,7 +61,7 @@ class MethodChannelBeaconsFlutter extends BeaconsFlutterPlatform {
       final bool? result = await methodChannel.invokeMethod<bool>('stopScan');
       return result ?? false;
     } on PlatformException catch (e) {
-      debugPrint("Error al detener scan: ${e.message}");
+      debugPrint("Error stopping scan: ${e.message}");
       return false;
     }
   }
@@ -74,7 +74,20 @@ class MethodChannelBeaconsFlutter extends BeaconsFlutterPlatform {
       );
       return result ?? false;
     } on PlatformException catch (e) {
-      debugPrint("Error verificando permisos: ${e.message}");
+      debugPrint("Error checking permissions: ${e.message}");
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> requestPermissions() async {
+    try {
+      final bool? result = await methodChannel.invokeMethod<bool>(
+        'requestPermissions',
+      );
+      return result ?? false;
+    } on PlatformException catch (e) {
+      debugPrint("Error requesting permissions: ${e.message}");
       return false;
     }
   }

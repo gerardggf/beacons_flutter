@@ -37,6 +37,14 @@ class BeaconsFlutter {
     return _platform.checkPermissions();
   }
 
+  /// Request required permissions
+  ///
+  /// Returns `true` if all required permissions are granted after request, `false` otherwise.
+  /// This will show the native permission dialogs on both Android and iOS.
+  Future<bool> requestPermissions() {
+    return _platform.requestPermissions();
+  }
+
   /// Get platform version (legacy method for compatibility)
   Future<String?> getPlatformVersion() {
     return _platform.getPlatformVersion();

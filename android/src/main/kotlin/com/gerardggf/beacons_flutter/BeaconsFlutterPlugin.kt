@@ -2,6 +2,7 @@ package com.gerardggf.beacons_flutter
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.*
@@ -11,22 +12,28 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.embedding.engine.plugins.activity.ActivityAware
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.PluginRegistry
 
-// <--- CAMBIO IMPORTANTE 2: El nombre de la clase debe coincidir con el archivo
-class BeaconsFlutterPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
+class BeaconsFlutterPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware, 
+    PluginRegistry.RequestPermissionsResultListener {
     private lateinit var channel: MethodChannel
     private lateinit var context: Context
+    private var activity: Activity? = null
     private var bluetoothAdapter: BluetoothAdapter? = null
     private var bluetoothLeScanner: BluetoothLeScanner? = null
     private var isScanning = false
     private val handler = Handler(Looper.getMainLooper())
+    private var pendingPermissionResult: MethodChannel.Result? = null
 
     companion object {
-        // Mantenemos el mismo nombre de canal para que tu Dart funcione igual
         private const val CHANNEL = "native_ble_scanner"
+        private const val PERMISSION_REQUEST_CODE = 12345
     }
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
@@ -49,12 +56,13 @@ class BeaconsFlutterPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
             "startScan" -> startScan(result)
             "stopScan" -> stopScan(result)
             "checkPermissions" -> checkPermissions(result)
+            "requestPermissions" -> requestPermissions(result)
             else -> result.notImplemented()
         }
     }
 
-    private fun checkPermissions(result: MethodChannel.Result) {
-        val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+    private fun getRequiredPermissions(): Array<String> {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             arrayOf(
                 Manifest.permission.BLUETOOTH_SCAN,
                 Manifest.permission.BLUETOOTH_CONNECT,
@@ -67,23 +75,78 @@ class BeaconsFlutterPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 Manifest.permission.ACCESS_FINE_LOCATION
             )
         }
+    }
 
+    private fun checkPermissions(result: MethodChannel.Result) {
+        val permissions = getRequiredPermissions()
         val allGranted = permissions.all {
-            ActivityCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+        }
+        result.success(allGranted)
+    }
+
+    private fun requestPermissions(result: MethodChannel.Result) {
+        if (activity == null) {
+            result.error("NO_ACTIVITY", "Activity not available", null)
+            return
         }
 
-        result.success(allGranted)
+        val permissions = getRequiredPermissions()
+        val missingPermissions = permissions.filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+        }.toTypedArray()
+
+        if (missingPermissions.isEmpty()) {
+            result.success(true)
+            return
+        }
+
+        pendingPermissionResult = result
+        ActivityCompat.requestPermissions(activity!!, missingPermissions, PERMISSION_REQUEST_CODE)
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ): Boolean {
+        if (requestCode == PERMISSION_REQUEST_CODE) {
+            val allGranted = grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+            pendingPermissionResult?.success(allGranted)
+            pendingPermissionResult = null
+            return true
+        }
+        return false
+    }
+
+    // ActivityAware implementation
+    override fun onAttachedToActivity(binding: ActivityPluginBinding) {
+        activity = binding.activity
+        binding.addRequestPermissionsResultListener(this)
+    }
+
+    override fun onDetachedFromActivityForConfigChanges() {
+        activity = null
+    }
+
+    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
+        activity = binding.activity
+        binding.addRequestPermissionsResultListener(this)
+    }
+
+    override fun onDetachedFromActivity() {
+        activity = null
     }
 
     @SuppressLint("MissingPermission")
     private fun startScan(result: MethodChannel.Result?) {
-        // Si ya está escaneando, detener primero
+        // If already scanning, stop first
         if (isScanning) {
             try {
                 bluetoothLeScanner?.stopScan(scanCallback)
                 isScanning = false
             } catch (e: Exception) {
-                // Ignorar errores al detener
+                // Ignore errors when stopping
             }
         }
 

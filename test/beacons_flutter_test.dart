@@ -26,6 +26,11 @@ class MockBeaconsFlutterPlatform
   Future<bool> stopScan() {
     throw UnimplementedError();
   }
+
+  @override
+  Future<bool> requestPermissions() {
+    throw UnimplementedError();
+  }
 }
 
 void main() {
