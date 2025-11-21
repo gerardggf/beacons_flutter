@@ -9,6 +9,7 @@ public class BeaconsFlutterPlugin: NSObject, FlutterPlugin {
     private var locationManager: CLLocationManager?
     private var isScanning = false
     private var pendingResult: FlutterResult?
+    private var pendingScanResult: FlutterResult?
     private var discoveredDevices: [String: [String: Any]] = [:]
     
     private static let CHANNEL = "native_ble_scanner"
@@ -22,9 +23,15 @@ public class BeaconsFlutterPlugin: NSObject, FlutterPlugin {
     
     public override init() {
         super.init()
-        centralManager = CBCentralManager(delegate: self, queue: nil, options: [CBCentralManagerOptionShowPowerAlertKey: true])
+        // No inicializar CBCentralManager aquí para evitar solicitar permisos demasiado pronto
         locationManager = CLLocationManager()
         locationManager?.delegate = self
+    }
+    
+    private func initializeCentralManagerIfNeeded() {
+        if centralManager == nil {
+            centralManager = CBCentralManager(delegate: self, queue: nil, options: [CBCentralManagerOptionShowPowerAlertKey: true])
+        }
     }
     
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -43,6 +50,8 @@ public class BeaconsFlutterPlugin: NSObject, FlutterPlugin {
     }
     
     private func checkPermissions(result: @escaping FlutterResult) {
+        initializeCentralManagerIfNeeded()
+        
         let bluetoothAuthorized = checkBluetoothPermission()
         let locationAuthorized = checkLocationPermission()
         
@@ -51,12 +60,30 @@ public class BeaconsFlutterPlugin: NSObject, FlutterPlugin {
     }
     
     private func checkBluetoothPermission() -> Bool {
+        guard let centralManager = centralManager else {
+            return false
+        }
+        
+        // En iOS 13.1+, verificar autorización de Bluetooth
         if #available(iOS 13.1, *) {
-            return CBCentralManager.authorization == .allowedAlways
+            let authorization = CBCentralManager.authorization
+            
+            // Verificar si está autorizado o si el estado es desconocido (aún no se ha solicitado)
+            // En iOS, el permiso de Bluetooth se solicita automáticamente al escanear
+            switch authorization {
+            case .allowedAlways:
+                return true
+            case .denied, .restricted:
+                return false
+            case .notDetermined:
+                // Si no está determinado, verificar el estado del manager
+                return centralManager.state == .poweredOn || centralManager.state == .unknown
+            @unknown default:
+                return centralManager.state == .poweredOn
+            }
         } else {
-            // En versiones anteriores a iOS 13.1, no hay autorización explícita de Bluetooth
-            // El permiso se gestiona automáticamente cuando se usa CBCentralManager
-            return true
+            // En versiones anteriores, verificar solo el estado
+            return centralManager.state == .poweredOn || centralManager.state == .unknown
         }
     }
     
@@ -72,6 +99,8 @@ public class BeaconsFlutterPlugin: NSObject, FlutterPlugin {
     }
     
     private func requestPermissions(result: @escaping FlutterResult) {
+        initializeCentralManagerIfNeeded()
+        
         pendingResult = result
         
         // Solicitar permisos de ubicación primero
@@ -94,6 +123,8 @@ public class BeaconsFlutterPlugin: NSObject, FlutterPlugin {
     }
     
     private func startScan(result: @escaping FlutterResult) {
+        initializeCentralManagerIfNeeded()
+        
         // Si ya está escaneando, detener primero
         if isScanning {
             centralManager?.stopScan()
@@ -105,8 +136,35 @@ public class BeaconsFlutterPlugin: NSObject, FlutterPlugin {
             return
         }
         
+        // Si el Bluetooth no está encendido aún, guardar el resultado para cuando esté listo
         if centralManager.state != .poweredOn {
-            result(FlutterError(code: "BLUETOOTH_OFF", message: "Bluetooth is not powered on", details: nil))
+            if centralManager.state == .poweredOff {
+                result(FlutterError(code: "BLUETOOTH_OFF", message: "Bluetooth is powered off", details: nil))
+                return
+            }
+            // Si está en otro estado (unauthorized, unsupported, etc)
+            if centralManager.state == .unauthorized {
+                result(FlutterError(code: "BLUETOOTH_UNAUTHORIZED", message: "Bluetooth is unauthorized", details: nil))
+                return
+            }
+            if centralManager.state == .unsupported {
+                result(FlutterError(code: "BLUETOOTH_UNSUPPORTED", message: "Bluetooth is not supported", details: nil))
+                return
+            }
+            // Para estados unknown o resetting, esperar un momento
+            pendingScanResult = result
+            // Esperar hasta 2 segundos para que el manager esté listo
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                guard let self = self else { return }
+                if let pendingResult = self.pendingScanResult {
+                    self.pendingScanResult = nil
+                    if self.centralManager?.state == .poweredOn {
+                        self.startScan(result: pendingResult)
+                    } else {
+                        pendingResult(FlutterError(code: "BLUETOOTH_NOT_READY", message: "Bluetooth is not ready", details: nil))
+                    }
+                }
+            }
             return
         }
         
@@ -117,8 +175,7 @@ public class BeaconsFlutterPlugin: NSObject, FlutterPlugin {
         centralManager.scanForPeripherals(
             withServices: nil,
             options: [
-                CBCentralManagerScanOptionAllowDuplicatesKey: true,
-                CBCentralManagerScanOptionSolicitedServiceUUIDsKey: []
+                CBCentralManagerScanOptionAllowDuplicatesKey: true
             ]
         )
         
@@ -203,12 +260,24 @@ public class BeaconsFlutterPlugin: NSObject, FlutterPlugin {
 
 extension BeaconsFlutterPlugin: CBCentralManagerDelegate {
     public func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        // Si hay un escaneo pendiente y ahora el Bluetooth está encendido, iniciar escaneo
+        if let pendingScan = pendingScanResult, central.state == .poweredOn {
+            pendingScanResult = nil
+            startScan(result: pendingScan)
+        }
+        
         switch central.state {
         case .poweredOff:
             if isScanning {
                 isScanning = false
                 channel?.invokeMethod("onScanStopped", arguments: nil)
             }
+        case .poweredOn:
+            break
+        case .unauthorized:
+            break
+        case .unsupported:
+            break
         default:
             break
         }
