@@ -45,9 +45,17 @@ class MethodChannelBeaconsFlutter extends BeaconsFlutterPlatform {
   }
 
   @override
-  Future<bool> startScan() async {
+  Future<bool> startScan({List<String>? iBeaconUUIDs}) async {
     try {
-      final bool? result = await methodChannel.invokeMethod<bool>('startScan');
+      final Map<String, dynamic> arguments = {};
+      if (iBeaconUUIDs != null && iBeaconUUIDs.isNotEmpty) {
+        arguments['iBeaconUUIDs'] = iBeaconUUIDs;
+      }
+
+      final bool? result = await methodChannel.invokeMethod<bool>(
+        'startScan',
+        arguments.isEmpty ? null : arguments,
+      );
       return result ?? false;
     } on PlatformException catch (e) {
       debugPrint("Error starting scan: ${e.message}");

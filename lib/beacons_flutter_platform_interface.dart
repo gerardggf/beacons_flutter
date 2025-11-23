@@ -30,7 +30,11 @@ abstract class BeaconsFlutterPlatform extends PlatformInterface {
   }
 
   /// Start scanning for beacons
-  Future<bool> startScan() {
+  ///
+  /// [iBeaconUUIDs] - Optional list of iBeacon UUIDs to scan for on iOS.
+  /// iOS requires specific UUIDs to detect iBeacons via Core Location.
+  /// On Android, this parameter is ignored as BLE scanning detects all beacons.
+  Future<bool> startScan({List<String>? iBeaconUUIDs}) {
     throw UnimplementedError('startScan() has not been implemented.');
   }
 

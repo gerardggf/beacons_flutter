@@ -1,3 +1,7 @@
+## 0.0.3
+
+* Fixed iOS for AltBeacon and Eddystone beacons.
+
 ## 0.0.2
 
 * Documentation improvements.

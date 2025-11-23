@@ -14,9 +14,24 @@ class BeaconsFlutter {
 
   /// Start scanning for beacons
   ///
+  /// [iBeaconUUIDs] - Optional list of iBeacon UUIDs to scan for on iOS.
+  /// iOS requires specific UUIDs to detect iBeacons via Core Location.
+  /// On Android, this parameter is ignored as BLE scanning detects all beacons.
+  ///
+  /// Example:
+  /// ```dart
+  /// // Scan for all beacons (Eddystone, AltBeacon, generic BLE)
+  /// await beaconsPlugin.startScan();
+  ///
+  /// // Scan including specific iBeacons on iOS
+  /// await beaconsPlugin.startScan(
+  ///   iBeaconUUIDs: ['E2C56DB5-DFFB-48D2-B060-D0F5A71096E0']
+  /// );
+  /// ```
+  ///
   /// Returns `true` if the scan started successfully, `false` otherwise.
-  Future<bool> startScan() {
-    return _platform.startScan();
+  Future<bool> startScan({List<String>? iBeaconUUIDs}) {
+    return _platform.startScan(iBeaconUUIDs: iBeaconUUIDs);
   }
 
   /// Stop scanning for beacons

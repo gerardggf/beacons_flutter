@@ -18,7 +18,7 @@ class MockBeaconsFlutterPlatform
   Stream<Map<String, dynamic>> get scanResults => throw UnimplementedError();
 
   @override
-  Future<bool> startScan() {
+  Future<bool> startScan({List<String>? iBeaconUUIDs}) {
     throw UnimplementedError();
   }
 

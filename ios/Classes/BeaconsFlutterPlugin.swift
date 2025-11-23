@@ -11,6 +11,8 @@ public class BeaconsFlutterPlugin: NSObject, FlutterPlugin {
     private var pendingResult: FlutterResult?
     private var pendingScanResult: FlutterResult?
     private var discoveredDevices: [String: [String: Any]] = [:]
+    private var beaconRegions: [CLBeaconRegion] = []
+    private var iBeaconUUIDs: [String] = []
     
     private static let CHANNEL = "native_ble_scanner"
     
@@ -37,6 +39,13 @@ public class BeaconsFlutterPlugin: NSObject, FlutterPlugin {
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         switch call.method {
         case "startScan":
+            // Extraer los UUIDs de iBeacons si se proporcionan
+            if let args = call.arguments as? [String: Any],
+               let uuids = args["iBeaconUUIDs"] as? [String] {
+                iBeaconUUIDs = uuids
+            } else {
+                iBeaconUUIDs = []
+            }
             startScan(result: result)
         case "stopScan":
             stopScan(result: result)
@@ -127,8 +136,7 @@ public class BeaconsFlutterPlugin: NSObject, FlutterPlugin {
         
         // Si ya está escaneando, detener primero
         if isScanning {
-            centralManager?.stopScan()
-            isScanning = false
+            stopAllScanning()
         }
         
         guard let centralManager = centralManager else {
@@ -171,17 +179,61 @@ public class BeaconsFlutterPlugin: NSObject, FlutterPlugin {
         // Limpiar dispositivos descubiertos
         discoveredDevices.removeAll()
         
-        // Iniciar escaneo sin filtros para obtener todos los dispositivos
+        // 1. Escaneo BLE para Eddystone, AltBeacon y otros beacons
+        // Escaneamos específicamente por Eddystone (FEAA) y sin filtro para el resto
         centralManager.scanForPeripherals(
-            withServices: nil,
+            withServices: nil, // Escanear todos los servicios
             options: [
                 CBCentralManagerScanOptionAllowDuplicatesKey: true
             ]
         )
         
+        // 2. Ranging de iBeacons si se especificaron UUIDs
+        if !iBeaconUUIDs.isEmpty {
+            startIBeaconRanging()
+        }
+        
         isScanning = true
         channel?.invokeMethod("onScanStarted", arguments: nil)
         result(true)
+    }
+    
+    private func startIBeaconRanging() {
+        guard let locationManager = locationManager else { return }
+        
+        // Limpiar regiones anteriores
+        for region in beaconRegions {
+            locationManager.stopRangingBeacons(in: region)
+        }
+        beaconRegions.removeAll()
+        
+        // Crear regiones para cada UUID de iBeacon
+        for uuidString in iBeaconUUIDs {
+            guard let uuid = UUID(uuidString: uuidString) else {
+                continue
+            }
+            
+            let region = CLBeaconRegion(
+                uuid: uuid,
+                identifier: "iBeacon-\(uuidString)"
+            )
+            
+            beaconRegions.append(region)
+            locationManager.startRangingBeacons(in: region)
+        }
+    }
+    
+    private func stopAllScanning() {
+        // Detener escaneo BLE
+        centralManager?.stopScan()
+        
+        // Detener ranging de iBeacons
+        guard let locationManager = locationManager else { return }
+        for region in beaconRegions {
+            locationManager.stopRangingBeacons(in: region)
+        }
+        
+        isScanning = false
     }
     
     private func stopScan(result: @escaping FlutterResult) {
@@ -190,8 +242,7 @@ public class BeaconsFlutterPlugin: NSObject, FlutterPlugin {
             return
         }
         
-        centralManager?.stopScan()
-        isScanning = false
+        stopAllScanning()
         channel?.invokeMethod("onScanStopped", arguments: nil)
         result(true)
     }
@@ -313,6 +364,102 @@ extension BeaconsFlutterPlugin: CLLocationManagerDelegate {
             let allGranted = checkBluetoothPermission() && checkLocationPermission()
             result(allGranted)
             pendingResult = nil
+        }
+    }
+    
+    // Ranging de iBeacons (iOS 13+)
+    public func locationManager(_ manager: CLLocationManager, didRange beacons: [CLBeacon], satisfying beaconConstraint: CLBeaconIdentityConstraint) {
+        for beacon in beacons {
+            // Convertir CLBeacon a formato compatible con Flutter
+            let deviceData = parseIBeacon(beacon)
+            
+            // Enviar al canal Flutter
+            DispatchQueue.main.async { [weak self] in
+                self?.channel?.invokeMethod("onDeviceFound", arguments: deviceData)
+            }
+        }
+    }
+    
+    // Ranging de iBeacons (legacy iOS 12 y anteriores)
+    public func locationManager(_ manager: CLLocationManager, didRangeBeacons beacons: [CLBeacon], in region: CLBeaconRegion) {
+        for beacon in beacons {
+            let deviceData = parseIBeacon(beacon)
+            
+            DispatchQueue.main.async { [weak self] in
+                self?.channel?.invokeMethod("onDeviceFound", arguments: deviceData)
+            }
+        }
+    }
+    
+    private func parseIBeacon(_ beacon: CLBeacon) -> [String: Any] {
+        var deviceData: [String: Any] = [:]
+        
+        // ID único basado en UUID + Major + Minor
+        let beaconId = "\(beacon.uuid.uuidString)-\(beacon.major)-\(beacon.minor)"
+        deviceData["id"] = beaconId
+        deviceData["name"] = "iBeacon"
+        
+        // RSSI y accuracy
+        deviceData["rssi"] = beacon.rssi
+        deviceData["txPower"] = 0 // No disponible directamente en CLBeacon
+        deviceData["connectable"] = false
+        
+        // Información específica de iBeacon
+        deviceData["serviceUuids"] = []
+        deviceData["serviceData"] = [:]
+        
+        // Manufacturer Data con formato iBeacon
+        // Company ID 76 (Apple) + formato iBeacon
+        let iBeaconData = formatIBeaconAsManufacturerData(
+            uuid: beacon.uuid,
+            major: beacon.major.uint16Value,
+            minor: beacon.minor.uint16Value
+        )
+        deviceData["manufacturerData"] = ["76": iBeaconData]
+        deviceData["isEddystone"] = false
+        
+        // Datos adicionales de proximidad
+        deviceData["accuracy"] = beacon.accuracy
+        deviceData["proximity"] = proximityToString(beacon.proximity)
+        
+        return deviceData
+    }
+    
+    private func formatIBeaconAsManufacturerData(uuid: UUID, major: UInt16, minor: UInt16) -> String {
+        // Formato iBeacon: 02 15 [UUID 16 bytes] [Major 2 bytes] [Minor 2 bytes] [TX Power 1 byte]
+        var dataString = "02 15 "
+        
+        // UUID (16 bytes)
+        let uuidBytes = uuid.uuid
+        let uuidString = withUnsafeBytes(of: uuidBytes) { bytes in
+            bytes.map { String(format: "%02x", $0) }.joined(separator: " ")
+        }
+        dataString += uuidString + " "
+        
+        // Major (2 bytes, big-endian)
+        dataString += String(format: "%02x %02x ", UInt8(major >> 8), UInt8(major & 0xFF))
+        
+        // Minor (2 bytes, big-endian)
+        dataString += String(format: "%02x %02x ", UInt8(minor >> 8), UInt8(minor & 0xFF))
+        
+        // TX Power (1 byte, placeholder)
+        dataString += "c5"
+        
+        return dataString
+    }
+    
+    private func proximityToString(_ proximity: CLProximity) -> String {
+        switch proximity {
+        case .immediate:
+            return "immediate"
+        case .near:
+            return "near"
+        case .far:
+            return "far"
+        case .unknown:
+            return "unknown"
+        @unknown default:
+            return "unknown"
         }
     }
 }
