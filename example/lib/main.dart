@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:beacons_flutter/beacons_flutter.dart';
-import 'beacon_diagnostics.dart';
 
 void main() {
   runApp(const BeaconsFlutterExampleApp());
@@ -209,8 +208,7 @@ class _BeaconScannerPageState extends State<BeaconScannerPage> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
-                '⚠️ iOS: Para detectar iBeacons debes añadir sus UUIDs en el código. '
-                'Se detectarán Eddystone y AltBeacons.',
+                '⚠️ iOS: To discover iBeacons, please add their UUIDs in the code. Eddystone and AltBeacons will still be discovered.',
               ),
               duration: Duration(seconds: 5),
               backgroundColor: Colors.orange,
@@ -636,13 +634,6 @@ class _BeaconScannerPageState extends State<BeaconScannerPage> {
       appBar: AppBar(
         title: const Text('Beacon Scanner'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.analytics),
-            tooltip: 'Diagnóstico',
-            onPressed: () => context.showBeaconDiagnostics(),
-          ),
-        ],
       ),
       body: Column(
         children: [
