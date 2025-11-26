@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:beacons_flutter/beacons_flutter.dart';
+import 'beacon_diagnostics.dart';
 
 void main() {
   runApp(const BeaconsFlutterExampleApp());
@@ -35,6 +36,10 @@ class _BeaconScannerPageState extends State<BeaconScannerPage> {
   bool _isScanning = false;
   bool _hasPermissions = false;
   StreamSubscription<Map<String, dynamic>>? _scanSubscription;
+
+  // iOS cannot discover iBeacons without their UUIDs configured
+  // Ex['E2C56DB5-DFFB-48D2-B060-D0F5A71096E0', 'FDA50693-A4E2-4FB1-AFCF-C6EB07647825']
+  final List<String> iBeaconUUIDs = [];
 
   @override
   void initState() {
@@ -196,13 +201,36 @@ class _BeaconScannerPageState extends State<BeaconScannerPage> {
       debugPrint('Scan stopped');
     } else {
       debugPrint('Starting scan...');
+
+      // Mostrar advertencia si no hay UUIDs configurados en iOS
+      if (Theme.of(context).platform == TargetPlatform.iOS &&
+          iBeaconUUIDs.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                '⚠️ iOS: Para detectar iBeacons debes añadir sus UUIDs en el código. '
+                'Se detectarán Eddystone y AltBeacons.',
+              ),
+              duration: Duration(seconds: 5),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
+
       setState(() {
         _isScanning = true;
         _discoveredBeacons.clear();
       });
 
-      final success = await _beaconsPlugin.startScan();
+      // Iniciar escaneo con UUIDs de iBeacons (si los hay)
+      final success = await _beaconsPlugin.startScan(
+        iBeaconUUIDs: iBeaconUUIDs.isNotEmpty ? iBeaconUUIDs : null,
+      );
+
       debugPrint('Start scan result: $success');
+      debugPrint('iBeacon UUIDs configured: ${iBeaconUUIDs.length}');
 
       if (!success && mounted) {
         debugPrint('Scan failed, reverting state');
@@ -212,6 +240,9 @@ class _BeaconScannerPageState extends State<BeaconScannerPage> {
         });
       } else {
         debugPrint('Scan started successfully!');
+        if (iBeaconUUIDs.isNotEmpty) {
+          debugPrint('Monitoring iBeacons with UUIDs: $iBeaconUUIDs');
+        }
       }
     }
   }
@@ -229,7 +260,9 @@ class _BeaconScannerPageState extends State<BeaconScannerPage> {
       _isScanning = true;
     });
 
-    await _beaconsPlugin.startScan();
+    await _beaconsPlugin.startScan(
+      iBeaconUUIDs: iBeaconUUIDs.isNotEmpty ? iBeaconUUIDs : null,
+    );
 
     // Small pause for visual feedback
     await Future.delayed(const Duration(milliseconds: 500));
@@ -603,6 +636,13 @@ class _BeaconScannerPageState extends State<BeaconScannerPage> {
       appBar: AppBar(
         title: const Text('Beacon Scanner'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.analytics),
+            tooltip: 'Diagnóstico',
+            onPressed: () => context.showBeaconDiagnostics(),
+          ),
+        ],
       ),
       body: Column(
         children: [
