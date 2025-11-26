@@ -104,6 +104,8 @@ public class BeaconsFlutterPlugin: NSObject, FlutterPlugin {
             status = CLLocationManager.authorizationStatus()
         }
         
+        // Aceptar tanto Always como WhenInUse
+        // Always es mejor para detección de beacons pero WhenInUse también funciona
         return status == .authorizedAlways || status == .authorizedWhenInUse
     }
     
@@ -112,7 +114,7 @@ public class BeaconsFlutterPlugin: NSObject, FlutterPlugin {
         
         pendingResult = result
         
-        // Solicitar permisos de ubicación primero
+        // Solicitar permisos de ubicación
         let status: CLAuthorizationStatus
         if #available(iOS 14.0, *) {
             status = locationManager?.authorizationStatus ?? .notDetermined
@@ -121,8 +123,21 @@ public class BeaconsFlutterPlugin: NSObject, FlutterPlugin {
         }
         
         if status == .notDetermined {
+            // Primera vez: solicitar WhenInUse
             locationManager?.requestWhenInUseAuthorization()
             // El resultado se enviará en el delegate de locationManager
+        } else if status == .authorizedWhenInUse {
+            // Si ya tiene WhenInUse, solicitar Always para mejor detección de beacons
+            locationManager?.requestAlwaysAuthorization()
+            // Esperar un momento y devolver el resultado
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self = self else { return }
+                if let result = self.pendingResult {
+                    let allGranted = self.checkBluetoothPermission() && self.checkLocationPermission()
+                    result(allGranted)
+                    self.pendingResult = nil
+                }
+            }
         } else {
             // Si los permisos de ubicación ya están concedidos o denegados
             let allGranted = checkBluetoothPermission() && checkLocationPermission()

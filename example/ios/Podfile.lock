@@ -19,9 +19,9 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/integration_test/ios"
 
 SPEC CHECKSUMS:
-  beacons_flutter: 63ae383fa190007c4cbd1579262faaf3997ae156
+  beacons_flutter: 2c1852c30ae18331959c4f95683ae00c088d8874
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
-  integration_test: 252f60fa39af5e17c3aa9899d35d908a0721b573
+  integration_test: 4a889634ef21a45d28d50d622cf412dc6d9f586e
 
 PODFILE CHECKSUM: 124d84b2f7afc790fa919f5fa94db8e1e877cd74
 
